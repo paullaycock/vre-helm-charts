@@ -1,6 +1,6 @@
 # escape-vre
 
-![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 The Virtual Research Environment developed at CERN.
 
@@ -99,18 +99,6 @@ The server URLs are therefore defined once, in
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| RcloneMount.capacity | string | `"10Gi"` |  |
-| RcloneMount.enabled | bool | `false` | Create a read-only rclone-backed PV/PVC (requires the csi-rclone driver). To mount it in user pods, also add it to jupyterhub.singleuser.storage.extraVolumes/Mounts (see values-custom-example.yaml; soft-checked in post-install notes) |
-| RcloneMount.pvName | string | `"data-rclone-pv"` |  |
-| RcloneMount.pvcName | string | `"data-rclone-pvc"` |  |
-| RcloneMount.readOnly | bool | `true` |  |
-| RcloneMount.reclaimPolicy | string | `"Retain"` |  |
-| RcloneMount.remoteName | string | `"rclone"` |  |
-| RcloneMount.remotePath | string | `"/"` |  |
-| RcloneMount.remoteUrl | string | `""` |  |
-| RcloneMount.storageClassName | string | `"rclone"` |  |
-| RcloneMount.vendor | string | `"other"` |  |
-| RcloneMount.volumeHandle | string | `"rclone-data-id"` |  |
 | bootstrap.enabled | bool | `true` |  |
 | bootstrap.image.pullPolicy | string | `"IfNotPresent"` |  |
 | bootstrap.image.repository | string | `"alpine/k8s"` |  |
@@ -121,7 +109,6 @@ The server URLs are therefore defined once, in
 | bootstrap.reanaAdminEmail | string | `nil` |  |
 | bootstrap.reanaAdminPassword | string | `nil` |  |
 | condaSetup.configMapName | string | `"conda-setup"` |  |
-| condaSetup.enabled | bool | `true` | Conda baseline setup (writable env/pkgs dirs, .condarc, conda init) for singleuser sessions. Set CONDA_ENV_NAME and CONDA_ENV_SOURCE_URL to also provision a named env. |
 | crm.enabled | bool | `false` |  |
 | crm.namespace | string | `"monitoring"` |  |
 | fluent-bit.config.inputs | string | `"[INPUT]\n    Name tail\n    Path /var/log/containers/*.log\n    multiline.parser docker, cri\n    Tag kube.*\n    Mem_Buf_Limit 5MB\n    Buffer_Chunk_Size 1\n    Refresh_Interval 1\n    Skip_Long_Lines On\n"` |  |
@@ -189,13 +176,13 @@ The server URLs are therefore defined once, in
 | jupyterhub.singleuser.image.tag | string | `"sha-281055c"` |  |
 | jupyterhub.singleuser.lifecycleHooks.postStart.exec.command[0] | string | `"sh"` |  |
 | jupyterhub.singleuser.lifecycleHooks.postStart.exec.command[1] | string | `"-c"` |  |
-| jupyterhub.singleuser.lifecycleHooks.postStart.exec.command[2] | string | `"bash /hooks/rucio/postStart_rucio.sh > /tmp/postStart_rucio.log 2>&1 || true\nbash /hooks/conda/postStart_conda.sh > /tmp/postStart_conda.log 2>&1 || true\n"` |  |
+| jupyterhub.singleuser.lifecycleHooks.postStart.exec.command[2] | string | `"rc=0\nbash /hooks/rucio/postStart_rucio.sh > /tmp/postStart_rucio.log 2>&1 || rc=1\nbash /hooks/conda/postStart_conda.sh > /tmp/postStart_conda.log 2>&1 || rc=1\nexit $rc\n"` |  |
 | jupyterhub.singleuser.networkPolicy.enabled | bool | `false` |  |
 | jupyterhub.singleuser.profileList | list | one default profile using singleuser.image | Entries without kubespawner_override use singleuser.image; add profiles with kubespawner_override.image ("name:tag" string) for community-specific environments |
 | jupyterhub.singleuser.startTimeout | int | `1200` |  |
 | jupyterhub.singleuser.storage.capacity | string | `"100Gi"` |  |
 | jupyterhub.singleuser.storage.extraVolumeMounts | list | rucio and conda hook mount points | Replaces wholesale when overridden: copy the full list (including both hook entries) when adding mounts |
-| jupyterhub.singleuser.storage.extraVolumes | list | rucio and conda hook ConfigMaps | Replaces wholesale when overridden: copy the full list (including both hook entries) when adding volumes, e.g. for RcloneMount (see values-custom-example.yaml) |
+| jupyterhub.singleuser.storage.extraVolumes | list | rucio and conda hook ConfigMaps | Replaces wholesale when overridden: copy the full list (including both hook entries) when adding volumes, e.g. for rcloneMount (see values-custom-example.yaml) |
 | loki.backend.replicas | int | `0` |  |
 | loki.bloomCompactor.replicas | int | `0` |  |
 | loki.bloomGateway.replicas | int | `0` |  |
@@ -266,6 +253,18 @@ The server URLs are therefore defined once, in
 | npdb.storage.payload.size | string | `"2Gi"` |  |
 | npdb.storage.payload.storageClass | string | `"escape-vre-shared-volume-storage-class"` |  |
 | prometheus.enabled | bool | `false` |  |
+| rcloneMount.capacity | string | `"10Gi"` |  |
+| rcloneMount.enabled | bool | `false` | Create a read-only rclone-backed PV/PVC (requires the csi-rclone driver). To mount it in user pods, also add it to jupyterhub.singleuser.storage.extraVolumes/Mounts (see values-custom-example.yaml; soft-checked in post-install notes) |
+| rcloneMount.pvName | string | `"data-rclone-pv"` |  |
+| rcloneMount.pvcName | string | `"data-rclone-pvc"` |  |
+| rcloneMount.readOnly | bool | `true` |  |
+| rcloneMount.reclaimPolicy | string | `"Retain"` |  |
+| rcloneMount.remoteName | string | `"rclone"` |  |
+| rcloneMount.remotePath | string | `"/"` |  |
+| rcloneMount.remoteUrl | string | `""` |  |
+| rcloneMount.storageClassName | string | `"rclone"` |  |
+| rcloneMount.vendor | string | `"other"` |  |
+| rcloneMount.volumeHandle | string | `"rclone-data-id"` |  |
 | reana.components.reana_db.enabled | bool | `true` |  |
 | reana.components.reana_server.environment.REANA_USER_EMAIL_CONFIRMATION | bool | `false` |  |
 | reana.components.reana_ui.enabled | bool | `true` |  |
@@ -307,7 +306,6 @@ The server URLs are therefore defined once, in
 | reana.workspaces.retention_rules.maximum_period | string | `"forever"` |  |
 | rucioClientSetup.additionalServers | list | `[]` | Additional Rucio servers (multi-RI/VO) for the CLI; entries need label, baseUrl, authUrl (optional authType, oidcIssuer) |
 | rucioClientSetup.configMapName | string | `"rucio-client-setup"` |  |
-| rucioClientSetup.enabled | bool | `true` | Rucio client configuration for singleuser sessions. If disabled, also override jupyterhub.singleuser.lifecycleHooks and extraVolumes/extraVolumeMounts. |
 | rucioClientSetup.multiHostCommands | string | `"whoami, ping, list, download"` | rucio CLI commands supporting multi-host selection when additionalServers is non-empty |
 | rucioClientSetup.oidc.audience | string | `"rucio"` |  |
 | rucioClientSetup.oidc.issuer | string | `""` | Required: issuer nickname of your IAM as configured in the Rucio server (written into the rucio CLI's rucio.cfg) |
