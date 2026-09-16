@@ -568,16 +568,11 @@ fluent-bit:
 
 
 # Rucio client configuration for singleuser sessions (postStart hook script).
-# Enabled by default: every VRE is expected to have a Rucio server to talk to.
-# NOTE: if you disable this, you must also override
-# jupyterhub.singleuser.lifecycleHooks and the corresponding
-# extraVolumes/extraVolumeMounts, which reference this ConfigMap unconditionally
-# (subchart values cannot depend on parent-chart flags).
+# Always enabled: every VRE is expected to have a Rucio server to talk to,
+# and jupyterhub.singleuser.storage.extraVolumes/extraVolumeMounts reference
+# this ConfigMap unconditionally (subchart values cannot depend on
+# parent-chart flags).
 rucioClientSetup:
-  # -- Rucio client configuration for singleuser sessions. If disabled, also
-  # override jupyterhub.singleuser.lifecycleHooks and
-  # extraVolumes/extraVolumeMounts.
-  enabled: true
   configMapName: rucio-client-setup
   # OIDC settings written into the rucio CLI config (/opt/rucio/etc/rucio.cfg)
   # by the postStart hook. These configure the CLI only - the jupyterlab
@@ -622,15 +617,10 @@ rucioClientSetup:
 # creates user-writable conda envs/pkgs dirs, .condarc and runs conda init,
 # so that users have a working conda. Optionally provisions a named environment
 # when CONDA_ENV_NAME and CONDA_ENV_SOURCE_URL are set (see singleuser.extraEnv).
-# NOTE: if you disable this, you must also override
-# jupyterhub.singleuser.lifecycleHooks and the corresponding
-# extraVolumes/extraVolumeMounts, which reference this ConfigMap unconditionally
-# (subchart values cannot depend on parent-chart flags).
+# Always enabled: jupyterhub.singleuser.storage.extraVolumes/extraVolumeMounts
+# reference this ConfigMap unconditionally (subchart values cannot depend on
+# parent-chart flags).
 condaSetup:
-  # -- Conda baseline setup (writable env/pkgs dirs, .condarc, conda init) for
-  # singleuser sessions. Set CONDA_ENV_NAME and CONDA_ENV_SOURCE_URL to also
-  # provision a named env.
-  enabled: true
   configMapName: conda-setup
 
 # Mount a remote (e.g. WebDAV) via the csi-rclone driver as a read-only PV/PVC

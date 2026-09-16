@@ -34,7 +34,7 @@
 {{- fail "jupyterhub.ingress.hosts must contain at least one host. The oauth_callback_url is based on this host." }}
 {{- end }}
 
-{{- if and .Values.jupyterhub.enabled .Values.rucioClientSetup.enabled }}
+{{- if .Values.jupyterhub.enabled }}
 {{- if not .Values.jupyterhub.singleuser.extraEnv.RUCIO_BASE_URL }}
 {{- fail "jupyterhub.singleuser.extraEnv.RUCIO_BASE_URL must be set: URL of the Rucio server (used by the rucio-jupyterlab extension and the rucio client postStart hook)." }}
 {{- end }}
