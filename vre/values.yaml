@@ -51,7 +51,6 @@ jupyterhub:
           - profile
           - email
 
-
     extraConfig:
 
       token-exchange: |
@@ -121,8 +120,10 @@ jupyterhub:
             - "sh"
             - "-c"
             - |
-              bash /hooks/rucio/postStart_rucio.sh > /tmp/postStart_rucio.log 2>&1 || true
-              bash /hooks/conda/postStart_conda.sh > /tmp/postStart_conda.log 2>&1 || true
+              rc=0
+              bash /hooks/rucio/postStart_rucio.sh > /tmp/postStart_rucio.log 2>&1 || rc=1
+              bash /hooks/conda/postStart_conda.sh > /tmp/postStart_conda.log 2>&1 || rc=1
+              exit $rc
 
     networkPolicy:
       enabled: false
