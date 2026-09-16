@@ -97,20 +97,20 @@ and values that must embed the Helm release name.
 {{- end -}}
 {{- end -}}
 
-{{/* RcloneMount vs singleuser extraVolumes coupling */}}
+{{/* rcloneMount vs singleuser extraVolumes coupling */}}
 {{- if .Values.jupyterhub.enabled -}}
-{{- $rclonePvc := .Values.RcloneMount.pvcName -}}
+{{- $rclonePvc := .Values.rcloneMount.pvcName -}}
 {{- $claimsRclonePvc := false -}}
 {{- range dig "singleuser" "storage" "extraVolumes" list .Values.jupyterhub -}}
 {{- if eq (dig "persistentVolumeClaim" "claimName" "" .) $rclonePvc -}}
 {{- $claimsRclonePvc = true -}}
 {{- end -}}
 {{- end -}}
-{{- if and .Values.RcloneMount.enabled (not $claimsRclonePvc) -}}
-{{- $warnings = append $warnings (printf "RcloneMount is enabled but no jupyterhub.singleuser.storage.extraVolumes entry claims %s: the rclone PV/PVC will exist but nothing mounts it in user pods (see values-custom-example.yaml)." $rclonePvc) -}}
+{{- if and .Values.rcloneMount.enabled (not $claimsRclonePvc) -}}
+{{- $warnings = append $warnings (printf "rcloneMount is enabled but no jupyterhub.singleuser.storage.extraVolumes entry claims %s: the rclone PV/PVC will exist but nothing mounts it in user pods (see values-custom-example.yaml)." $rclonePvc) -}}
 {{- end -}}
-{{- if and (not .Values.RcloneMount.enabled) $claimsRclonePvc -}}
-{{- $warnings = append $warnings (printf "jupyterhub.singleuser.storage.extraVolumes claims %s but RcloneMount is disabled: the PVC does not exist and user pods will hang Pending at spawn." $rclonePvc) -}}
+{{- if and (not .Values.rcloneMount.enabled) $claimsRclonePvc -}}
+{{- $warnings = append $warnings (printf "jupyterhub.singleuser.storage.extraVolumes claims %s but rcloneMount is disabled: the PVC does not exist and user pods will hang Pending at spawn." $rclonePvc) -}}
 {{- end -}}
 {{- end -}}
 

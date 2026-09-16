@@ -1,51 +1,57 @@
-{{- if .Values.RcloneMount.enabled }}
+{{- if .Values.rcloneMount.enabled }}
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: {{ .Values.RcloneMount.pvName }}
+  name: {{ .Values.rcloneMount.pvName }}
   labels:
-    name: {{ .Values.RcloneMount.pvName }}
+    name: {{ .Values.rcloneMount.pvName }}
 spec:
   accessModes:
     - ReadOnlyMany
   capacity:
-    storage: {{ .Values.RcloneMount.capacity }}
+    storage: {{ .Values.rcloneMount.capacity }}
   claimRef:
     apiVersion: v1
     kind: PersistentVolumeClaim
-    name: {{ .Values.RcloneMount.pvcName }}
+    name: {{ .Values.rcloneMount.pvcName }}
     namespace: {{ .Release.Namespace }}
   csi:
     driver: csi-rclone
-    readOnly: {{ .Values.RcloneMount.readOnly }}
+    readOnly: {{ .Values.rcloneMount.readOnly }}
     volumeAttributes:
+      # PersistentVolume is cluster-scoped, not namespaced: configData here
+      # is readable by anyone with PV access anywhere in the cluster, not
+      # just this namespace. It holds no credentials today (anonymous
+      # webdav). Do not add user/pass here if you switch to an
+      # authenticated remote - use a Secret-based mechanism instead (e.g.
+      # a CSI nodePublishSecretRef, if csi-rclone supports it).
       configData: |
 
-        [{{ .Values.RcloneMount.remoteName }}]
+        [{{ .Values.rcloneMount.remoteName }}]
 
         type = webdav
-        url = {{ required "RcloneMount.remoteUrl is required when RcloneMount is enabled" .Values.RcloneMount.remoteUrl }}
-        vendor = {{ .Values.RcloneMount.vendor }}
-      remote: {{ .Values.RcloneMount.remoteName }}
-      remotePath: {{ .Values.RcloneMount.remotePath | quote }}
-      vendor: {{ .Values.RcloneMount.vendor }}
-    volumeHandle: {{ .Values.RcloneMount.volumeHandle }}
-  persistentVolumeReclaimPolicy: {{ .Values.RcloneMount.reclaimPolicy }}
-  storageClassName: {{ .Values.RcloneMount.storageClassName }}
+        url = {{ required "rcloneMount.remoteUrl is required when rcloneMount is enabled" .Values.rcloneMount.remoteUrl }}
+        vendor = {{ .Values.rcloneMount.vendor }}
+      remote: {{ .Values.rcloneMount.remoteName }}
+      remotePath: {{ .Values.rcloneMount.remotePath | quote }}
+      vendor: {{ .Values.rcloneMount.vendor }}
+    volumeHandle: {{ .Values.rcloneMount.volumeHandle }}
+  persistentVolumeReclaimPolicy: {{ .Values.rcloneMount.reclaimPolicy }}
+  storageClassName: {{ .Values.rcloneMount.storageClassName }}
   volumeMode: Filesystem
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ .Values.RcloneMount.pvcName }}
+  name: {{ .Values.rcloneMount.pvcName }}
   namespace: {{ .Release.Namespace }}
 spec:
   accessModes:
     - ReadOnlyMany
   resources:
     requests:
-      storage: {{ .Values.RcloneMount.capacity }}
-  storageClassName: {{ .Values.RcloneMount.storageClassName }}
+      storage: {{ .Values.rcloneMount.capacity }}
+  storageClassName: {{ .Values.rcloneMount.storageClassName }}
   volumeMode: Filesystem
-  volumeName: {{ .Values.RcloneMount.pvName }}
+  volumeName: {{ .Values.rcloneMount.pvName }}
 {{- end }}

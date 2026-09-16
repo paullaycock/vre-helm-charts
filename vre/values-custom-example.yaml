@@ -25,10 +25,10 @@ jupyterhub:
         oauth_callback_url: https://vre.example.local/hub/oauth_callback
     
   singleuser:
-    # -- To mount an rclone remote (RcloneMount.enabled below), uncomment and
+    # -- To mount an rclone remote (rcloneMount.enabled below), uncomment and
     # keep ALL entries: these lists replace the defaults wholesale, and the
     # rucio/conda hook volumes are required by the postStart hooks. The
-    # jupyterhub-shared claimName must match RcloneMount.pvcName; /data is
+    # jupyterhub-shared claimName must match rcloneMount.pvcName; /data is
     # where the rucio-jupyterlab extension expects the default RSE
     # (RUCIO_RSE_MOUNT_PATH) in "replica" mode.
     # storage:

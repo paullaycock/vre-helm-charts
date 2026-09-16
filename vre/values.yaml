@@ -136,12 +136,12 @@ jupyterhub:
       # overridden - if you add a volume in your local values file you must
       # copy the full lists, INCLUDING the rucio/conda hook entries below
       # (see values-custom-example.yaml for a ready-to-copy block).
-      # To mount an rclone remote (RcloneMount.enabled), add a volume whose
-      # claimName matches RcloneMount.pvcName, typically mounted at /data:
+      # To mount an rclone remote (rcloneMount.enabled), add a volume whose
+      # claimName matches rcloneMount.pvcName, typically mounted at /data:
       # the rucio-jupyterlab extension expects the default RSE there
       # (RUCIO_RSE_MOUNT_PATH) when RUCIO_MODE is "replica".
       # -- Replaces wholesale when overridden: copy the full list (including
-      # both hook entries) when adding volumes, e.g. for RcloneMount
+      # both hook entries) when adding volumes, e.g. for rcloneMount
       # (see values-custom-example.yaml)
       # @default -- rucio and conda hook ConfigMaps
       extraVolumes:
@@ -630,7 +630,7 @@ condaSetup:
 # must also add a volume with claimName matching pvcName to
 # jupyterhub.singleuser.storage.extraVolumes/extraVolumeMounts (full lists,
 # see values-custom-example.yaml; soft-checked in the post-install notes).
-RcloneMount:
+rcloneMount:
   # -- Create a read-only rclone-backed PV/PVC (requires the csi-rclone
   # driver). To mount it in user pods, also add it to
   # jupyterhub.singleuser.storage.extraVolumes/Mounts (see
