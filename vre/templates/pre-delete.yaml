@@ -4,7 +4,7 @@ metadata:
   name: {{ include "escape-vre.fullname" . }}-pre-delete
   annotations:
     helm.sh/hook: pre-delete
-    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
 spec:
   activeDeadlineSeconds: 900
   backoffLimit: 0
