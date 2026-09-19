@@ -40,8 +40,9 @@ data:
     if [ -n "${CONDA_ENV_SOURCE_URL:-}" ]; then
       : "${CONDA_ENV_NAME:?CONDA_ENV_NAME must be set when CONDA_ENV_SOURCE_URL is given}"
 
-      if [ -d "$conda_envs_dir/${CONDA_ENV_NAME}" ]; then
-        echo "Conda environment already exists, skipping creation."
+      kernel_dir="$HOME/.local/share/jupyter/kernels/${CONDA_ENV_NAME}"
+      if [ -d "$kernel_dir" ]; then
+        echo "Conda environment and kernel already exist, skipping creation."
       else
         echo "Creating conda environment..."
         wget "${CONDA_ENV_SOURCE_URL}" -O conda_env_original.yaml

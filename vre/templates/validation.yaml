@@ -45,3 +45,7 @@
 {{- fail "rucioClientSetup.oidc.issuer must be set: issuer nickname of your IAM as configured in the Rucio server (written into the rucio CLI's rucio.cfg)." }}
 {{- end }}
 {{- end }}
+
+{{- if and .Values.npdb.enabled (eq .Values.npdb.postgresql.auth.password "change-me") }}
+{{- fail "npdb.postgresql.auth.password must be changed from the default 'change-me'" }}
+{{- end }}
