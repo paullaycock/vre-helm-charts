@@ -52,6 +52,9 @@ jupyterhub:
         username_key: preferred_username
         enable_auth_state: true
         allow_all: true
+        # Add offline_access (if your IAM client allows it) so that the hub
+        # can renew logins with a refresh token; without it users must log
+        # in again once the access token expires (see refresh_user below).
         scope:
           - openid
           - profile
@@ -60,17 +63,77 @@ jupyterhub:
     extraConfig:
 
       token-exchange: |
+        import base64
+        import json
         import pprint
         import os
+        import time
         import warnings
         import requests
         from oauthenticator.generic import GenericOAuthenticator
+        from tornado import web
+        from traitlets import Integer
+
+        def _seconds_left(jwt):
+            """Seconds until a JWT access token expires; 0 if it cannot be read."""
+            try:
+                payload = jwt.split(".")[1]
+                payload += "=" * (-len(payload) % 4)
+                return json.loads(base64.urlsafe_b64decode(payload))["exp"] - time.time()
+            except Exception:
+                return 0
 
         # custom authenticator to enable auth_state and get access token to set as env var for rucio extension
         class RucioAuthenticator(GenericOAuthenticator):
+            token_refresh_margin = Integer(
+                600,
+                config=True,
+                help="Renew the access token when fewer than this many seconds remain.",
+            )
+
             def __init__(self, **kwargs):
                 super().__init__(**kwargs)
                 self.enable_auth_state = True
+
+            async def refresh_user(self, user, handler=None):
+                """Renew the stored access token with the refresh token.
+
+                The access token is stored only at login and expires (one hour
+                at INDIGO IAM); without renewal every later spawn failed.
+                Needs `offline_access` in the login scope so that the IAM
+                issues a refresh token. Returning False makes JupyterHub ask
+                the user to log in again ("auth has expired ..., login again").
+                """
+                auth_state = await user.get_auth_state()
+                if not auth_state or not auth_state.get("access_token"):
+                    return False
+                if _seconds_left(auth_state["access_token"]) > self.token_refresh_margin:
+                    return True
+                refresh_token = auth_state.get("refresh_token")
+                if not refresh_token:
+                    self.log.info("Login of %s expires and there is no refresh token: login required", user.name)
+                    return False
+                params = {
+                    'grant_type': 'refresh_token',
+                    'refresh_token': refresh_token,
+                    'client_id': self.client_id,
+                    'client_secret': self.client_secret,
+                }
+                try:
+                    token_info = await self.get_token_info(handler, params)
+                except Exception as e:
+                    status = getattr(e, "status_code", None) or getattr(e, "code", None)
+                    self.log.warning("Renewing the login of %s failed (%s %s): login required",
+                                     user.name, type(e).__name__, status)
+                    return False
+                auth_state["access_token"] = token_info["access_token"]
+                # the IAM may rotate the refresh token
+                auth_state["refresh_token"] = token_info.get("refresh_token") or refresh_token
+                if token_info.get("id_token"):
+                    auth_state["id_token"] = token_info["id_token"]
+                auth_state["token_response"] = token_info
+                self.log.info("Renewed the login of %s", user.name)
+                return {"name": user.name, "auth_state": auth_state}
 
             def exchange_token(self, token):
                 params = {
@@ -82,11 +145,21 @@ jupyterhub:
                     'scope': 'openid profile',
                     'audience': 'rucio'
                 }
-                response = requests.post(self.token_url, data=params)
-                print("EXCHANGE TOKEN for params", params)
-                print(response.json())
-                rucio_token = response.json()['access_token']
-
+                # No logging of params or responses: they hold tokens.
+                rucio_token, status = None, None
+                try:
+                    response = requests.post(self.token_url, data=params, timeout=30)
+                    status = response.status_code
+                    rucio_token = response.json().get('access_token')
+                except Exception as e:
+                    status = type(e).__name__
+                if not rucio_token:
+                    self.log.warning("Rucio token exchange failed (%s)", status)
+                    raise web.HTTPError(
+                        403,
+                        "Could not get a Rucio token from the identity provider. "
+                        "Your login may have expired: please log out and log in again.",
+                    )
                 return rucio_token
 
             async def pre_spawn_start(self, user, spawner):
