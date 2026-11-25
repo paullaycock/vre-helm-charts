@@ -1,0 +1,50 @@
+# Publish the escape-vre chart as an OCI artifact to the repository owner's
+# GitHub Container Registry when a tag oci-<version> is pushed, e.g.
+#   git tag oci-0.2.1-etap.1 && git push origin oci-0.2.1-etap.1
+# publishes oci://ghcr.io/<owner>/charts/escape-vre:0.2.1-etap.1.
+# The version comes from the tag, so Chart.yaml needs no version commit.
+# New GHCR packages may start private: make the package public once for
+# anonymous pulls (e.g. by Flux).
+name: Publish chart (OCI)
+
+on:
+  push:
+    tags:
+      - 'oci-*'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v4.2.3'
+
+      - name: Chart version and registry from the tag
+        id: meta
+        run: |
+          echo "version=${GITHUB_REF_NAME#oci-}" >> "$GITHUB_OUTPUT"
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "registry=oci://ghcr.io/${owner}/charts" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      # Helm 4 fetches the repositories named in vre/Chart.yaml directly,
+      # HTTP and OCI alike: no `helm repo add` needed.
+      - name: Build dependencies
+        run: helm dependency build vre
+
+      - name: Package
+        run: helm package vre --version "${{ steps.meta.outputs.version }}" --destination dist
+
+      - name: Push
+        run: helm push "dist/escape-vre-${{ steps.meta.outputs.version }}.tgz" "${{ steps.meta.outputs.registry }}"
