@@ -27,7 +27,8 @@ jupyterhub:
   singleuser:
     # -- To mount an rclone remote (rcloneMount.enabled below), uncomment and
     # keep ALL entries: these lists replace the defaults wholesale, and the
-    # rucio/conda hook volumes are required by the postStart hooks. The
+    # rucio/conda hook volumes are required by the postStart hooks and the
+    # token-renewal volume by the Rucio token renewal (tokenRenewal). The
     # jupyterhub-shared claimName must match rcloneMount.pvcName; /data is
     # where the rucio-jupyterlab extension expects the default RSE
     # (RUCIO_RSE_MOUNT_PATH) in "replica" mode.
@@ -44,6 +45,9 @@ jupyterhub:
     #     configMap:
     #       name: conda-setup
     #       defaultMode: 0o755
+    #   - name: rucio-token-renewal
+    #     configMap:
+    #       name: rucio-token-renewal
     #   extraVolumeMounts:
     #   - name: jupyterhub-shared
     #     mountPath: /data
@@ -52,6 +56,9 @@ jupyterhub:
     #     mountPath: /hooks/rucio
     #   - name: conda-setup
     #     mountPath: /hooks/conda
+    #   - name: rucio-token-renewal
+    #     mountPath: /usr/local/etc/jupyter
+    #     readOnly: true
 
     extraEnv:
       # -- Rucio instance for this deployment. These variables are consumed by

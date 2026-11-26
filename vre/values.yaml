@@ -63,6 +63,7 @@ jupyterhub:
     extraConfig:
 
       token-exchange: |
+        import asyncio
         import base64
         import json
         import pprint
@@ -70,6 +71,8 @@ jupyterhub:
         import time
         import warnings
         import requests
+        from jupyterhub.apihandlers.base import APIHandler
+        from jupyterhub.scopes import needs_scope
         from oauthenticator.generic import GenericOAuthenticator
         from tornado import web
         from traitlets import Integer
@@ -96,43 +99,57 @@ jupyterhub:
                 self.enable_auth_state = True
 
             async def refresh_user(self, user, handler=None):
-                """Renew the stored access token with the refresh token.
+                """Renew the stored access token, and the Rucio token.
 
                 The access token is stored only at login and expires (one hour
                 at INDIGO IAM); without renewal every later spawn failed.
                 Needs `offline_access` in the login scope so that the IAM
                 issues a refresh token. Returning False makes JupyterHub ask
                 the user to log in again ("auth has expired ..., login again").
+                The Rucio token (auth_state "rucio_token") is exchanged again
+                when it is within the same margin of expiry; running servers
+                fetch it through RucioTokenHandler below.
                 """
                 auth_state = await user.get_auth_state()
                 if not auth_state or not auth_state.get("access_token"):
                     return False
-                if _seconds_left(auth_state["access_token"]) > self.token_refresh_margin:
+                changed = False
+                if _seconds_left(auth_state["access_token"]) <= self.token_refresh_margin:
+                    refresh_token = auth_state.get("refresh_token")
+                    if not refresh_token:
+                        self.log.info("Login of %s expires and there is no refresh token: login required", user.name)
+                        return False
+                    params = {
+                        'grant_type': 'refresh_token',
+                        'refresh_token': refresh_token,
+                        'client_id': self.client_id,
+                        'client_secret': self.client_secret,
+                    }
+                    try:
+                        token_info = await self.get_token_info(handler, params)
+                    except Exception as e:
+                        status = getattr(e, "status_code", None) or getattr(e, "code", None)
+                        self.log.warning("Renewing the login of %s failed (%s %s): login required",
+                                         user.name, type(e).__name__, status)
+                        return False
+                    auth_state["access_token"] = token_info["access_token"]
+                    # the IAM may rotate the refresh token
+                    auth_state["refresh_token"] = token_info.get("refresh_token") or refresh_token
+                    if token_info.get("id_token"):
+                        auth_state["id_token"] = token_info["id_token"]
+                    auth_state["token_response"] = token_info
+                    self.log.info("Renewed the login of %s", user.name)
+                    changed = True
+                if _seconds_left(auth_state.get("rucio_token") or "") <= self.token_refresh_margin:
+                    try:
+                        auth_state["rucio_token"] = await self.exchange_token_async(auth_state["access_token"])
+                        changed = True
+                    except web.HTTPError:
+                        # keep the login; the token handler or the next spawn
+                        # reports the failure (exchange_token logged it)
+                        pass
+                if not changed:
                     return True
-                refresh_token = auth_state.get("refresh_token")
-                if not refresh_token:
-                    self.log.info("Login of %s expires and there is no refresh token: login required", user.name)
-                    return False
-                params = {
-                    'grant_type': 'refresh_token',
-                    'refresh_token': refresh_token,
-                    'client_id': self.client_id,
-                    'client_secret': self.client_secret,
-                }
-                try:
-                    token_info = await self.get_token_info(handler, params)
-                except Exception as e:
-                    status = getattr(e, "status_code", None) or getattr(e, "code", None)
-                    self.log.warning("Renewing the login of %s failed (%s %s): login required",
-                                     user.name, type(e).__name__, status)
-                    return False
-                auth_state["access_token"] = token_info["access_token"]
-                # the IAM may rotate the refresh token
-                auth_state["refresh_token"] = token_info.get("refresh_token") or refresh_token
-                if token_info.get("id_token"):
-                    auth_state["id_token"] = token_info["id_token"]
-                auth_state["token_response"] = token_info
-                self.log.info("Renewed the login of %s", user.name)
                 return {"name": user.name, "auth_state": auth_state}
 
             def exchange_token(self, token):
@@ -162,6 +179,11 @@ jupyterhub:
                     )
                 return rucio_token
 
+            async def exchange_token_async(self, token):
+                """exchange_token without blocking the hub's event loop."""
+                loop = asyncio.get_running_loop()
+                return await loop.run_in_executor(None, self.exchange_token, token)
+
             async def pre_spawn_start(self, user, spawner):
                 auth_state = await user.get_auth_state()
                 #print("AUTH_state")
@@ -170,16 +192,70 @@ jupyterhub:
                     # user has no auth state
                     return False
 
+                # Reuse the stored Rucio token while it is fresh; otherwise
+                # exchange and store it, so that the running server's renewal
+                # (RucioTokenHandler) starts from the same token.
+                rucio_token = auth_state.get("rucio_token")
+                if _seconds_left(rucio_token or "") <= self.token_refresh_margin:
+                    rucio_token = await self.exchange_token_async(auth_state['access_token'])
+                    auth_state["rucio_token"] = rucio_token
+                    await user.save_auth_state(auth_state)
+
                 # define token environment variable from auth_state
-                spawner.environment['RUCIO_ACCESS_TOKEN'] = self.exchange_token(auth_state['access_token'])
+                spawner.environment['RUCIO_ACCESS_TOKEN'] = rucio_token
                 spawner.environment['EOS_ACCESS_TOKEN'] = auth_state['access_token']
                 spawner.environment['NOPAYLOADDB_TOKEN'] = auth_state['access_token']
+
+        class RucioTokenHandler(APIHandler):
+            """GET /hub/api/users/<name>/rucio-token: the user's current Rucio token.
+
+            For the rucio_token_renewal server extension in the user's own
+            server, whose API token carries custom:rucio-token!user (see
+            server_token_scopes below). Renews the login first; returns only
+            the Rucio token and its expiry, never the IAM tokens.
+            """
+
+            async def get(self, user_name):
+                # needs_scope is applied per request: custom scopes are
+                # registered at hub start-up, after this config is loaded,
+                # and the decorator refuses unknown scopes when it is created.
+                return await needs_scope("custom:rucio-token")(type(self)._get)(self, user_name)
+
+            async def _get(self, user_name):
+                user = self.find_user(user_name)
+                if user is None:
+                    raise web.HTTPError(404)
+                user = await self.refresh_auth(user, force=True)
+                if user is None:
+                    raise web.HTTPError(403, "Login expired: log out and log in again.")
+                auth_state = await user.get_auth_state() or {}
+                token = auth_state.get("rucio_token")
+                if _seconds_left(token or "") <= 0:
+                    raise web.HTTPError(503, "No current Rucio token.")
+                self.set_header("Cache-Control", "no-store")
+                self.write({"token": token, "expires_in": int(_seconds_left(token))})
 
         # set the above authenticator as the default
         c.JupyterHub.authenticator_class = RucioAuthenticator
 
         # enable authentication state
         c.GenericOAuthenticator.enable_auth_state = True
+
+        # Token renewal for running servers (tokenRenewal in the chart values).
+        c.JupyterHub.custom_scopes = {
+            "custom:rucio-token": {
+                "description": "Read the user's current Rucio token.",
+            },
+        }
+        c.JupyterHub.extra_handlers = [
+            (r"/api/users/([^/]+)/rucio-token", RucioTokenHandler),
+        ]
+        # The default server scopes plus the user's own Rucio token.
+        c.Spawner.server_token_scopes = [
+            "users:activity!user",
+            "access:servers!server",
+            "custom:rucio-token!user",
+        ]
 
   singleuser:
     cloudMetadata:
@@ -220,9 +296,9 @@ jupyterhub:
       # the rucio-jupyterlab extension expects the default RSE there
       # (RUCIO_RSE_MOUNT_PATH) when RUCIO_MODE is "replica".
       # -- Replaces wholesale when overridden: copy the full list (including
-      # both hook entries) when adding volumes, e.g. for rcloneMount
-      # (see values-custom-example.yaml)
-      # @default -- rucio and conda hook ConfigMaps
+      # the hook and token-renewal entries) when adding volumes, e.g. for
+      # rcloneMount (see values-custom-example.yaml)
+      # @default -- rucio and conda hook and token-renewal ConfigMaps
       extraVolumes:
         # Arbitrary key for identity & ordering
       - name: rucio-client-setup
@@ -233,15 +309,22 @@ jupyterhub:
         configMap:
           name: conda-setup
           defaultMode: 0o755
+      - name: rucio-token-renewal
+        configMap:
+          name: rucio-token-renewal
       # -- Replaces wholesale when overridden: copy the full list (including
-      # both hook entries) when adding mounts
-      # @default -- rucio and conda hook mount points
+      # the hook and token-renewal entries) when adding mounts
+      # @default -- rucio and conda hook and token-renewal mount points
       extraVolumeMounts:
         # Arbitrary key for identity & ordering
       - name: rucio-client-setup
         mountPath: /hooks/rucio
       - name: conda-setup
         mountPath: /hooks/conda
+      # a Jupyter config directory the docker-stacks images leave empty
+      - name: rucio-token-renewal
+        mountPath: /usr/local/etc/jupyter
+        readOnly: true
 
     image:
       name: ghcr.io/vre-hub/vre-singleuser-py311
@@ -319,17 +402,19 @@ jupyterhub:
       # rucio CLI config written by the postStart hook
       # -- Auth type preselected in the extension and used by the rucio CLI
       RUCIO_DEFAULT_AUTH_TYPE: "oidc"
-      # Intended token source for the extension: the hub authenticator exchanges
-      # the login token and injects it as RUCIO_ACCESS_TOKEN (see extraConfig
-      # token-exchange above). NOTE: configure-vre.py currently does NOT map
-      # these two into the extension config (the lines are commented out
-      # there); they are kept as documentation of the intended wiring and will
-      # take effect if the image restores the mapping.
-      # -- Intended extension token source (currently not mapped by
-      # configure-vre.py, see "Rucio configuration" above)
-      RUCIO_OIDC_AUTH: "env"
-      # -- Intended extension token variable (see RUCIO_OIDC_AUTH)
-      RUCIO_OIDC_ENV_NAME: "RUCIO_ACCESS_TOKEN"
+      # Token source for the extension: the hub exchanges the login token for
+      # a Rucio token, the rucio postStart hook writes it to
+      # /tmp/rucio_oauth.token (shared with the rucio CLI), and the
+      # tokenRenewal server extension replaces it before it expires. The
+      # extension re-reads the file; an environment variable would stay at
+      # its spawn-time value. NOTE: vre-hub's configure-vre.py currently does
+      # NOT map these into the extension config (the lines are commented out
+      # there); images that restore the mapping (e.g. vre-singleuser-et) use them.
+      # -- Extension token source: "file" (renewed) or "env" (spawn-time only)
+      RUCIO_OIDC_AUTH: "file"
+      # -- Extension token file (with RUCIO_OIDC_AUTH "file"); must equal
+      # the renewed file, see tokenRenewal
+      RUCIO_OIDC_FILE_NAME: "/tmp/rucio_oauth.token"
       # Further optional variables understood by configure-vre.py (defaults in
       # the image): RUCIO_WEBUI_URL, RUCIO_CA_CERT, RUCIO_VO,
       # RUCIO_REPLICATION_RULE_LIFETIME_DAYS, RUCIO_PATH_BEGINS_AT, and
@@ -702,6 +787,19 @@ rucioClientSetup:
 # parent-chart flags).
 condaSetup:
   configMapName: conda-setup
+
+# Rucio token renewal for running singleuser servers. The Rucio token the hub
+# exchanges at spawn expires after about an hour; a small Jupyter server
+# extension (files/rucio_token_renewal.py) asks the hub for a current one
+# shortly before expiry and rewrites /tmp/rucio_oauth.token. The hub side
+# (RucioTokenHandler, custom:rucio-token scope) is in
+# jupyterhub.hub.extraConfig.token-exchange; the IAM refresh token stays in
+# the hub. Needs offline_access in the login scope for sessions to outlive
+# the IAM access token. Always enabled: the ConfigMap is referenced from
+# jupyterhub.singleuser.storage.extraVolumes/extraVolumeMounts, mounted at
+# /usr/local/etc/jupyter.
+tokenRenewal:
+  configMapName: rucio-token-renewal
 
 # Mount a remote (e.g. WebDAV) via the csi-rclone driver as a read-only PV/PVC
 # for singleuser sessions. Requires the csi-rclone CSI driver in the cluster.
