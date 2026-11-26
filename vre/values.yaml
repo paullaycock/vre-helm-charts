@@ -256,6 +256,19 @@ jupyterhub:
             "access:servers!server",
             "custom:rucio-token!user",
         ]
+        # A server token gets only scopes its user holds (JupyterHub
+        # intersects them), so users need the custom scope on themselves.
+        # A partial "user" role spec is merged with the default one
+        # ("self"); membership is unchanged.
+        _roles = c.JupyterHub.load_roles
+        if not isinstance(_roles, list):
+            _roles = c.JupyterHub.load_roles = []
+        for _role in _roles:
+            if _role["name"] == "user":
+                _role.setdefault("scopes", ["self"]).append("custom:rucio-token!user")
+                break
+        else:
+            _roles.append({"name": "user", "scopes": ["self", "custom:rucio-token!user"]})
 
   singleuser:
     cloudMetadata:
