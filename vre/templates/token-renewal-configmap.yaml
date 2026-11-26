@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.tokenRenewal.configMapName }}
+  namespace: {{ .Release.Namespace }}
+data:
+  rucio_token_renewal.py: |
+{{ .Files.Get "files/rucio_token_renewal.py" | indent 4 }}
+  jupyter_server_config.py: |
+{{ .Files.Get "files/jupyter_server_config.py" | indent 4 }}
